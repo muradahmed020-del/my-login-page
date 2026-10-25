@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>হিসাব খাতা - কাস্টমার লেজার</title>
+    <style>
+        :root { --primary: #2c3e50; --secondary: #3498db; --success: #27ae60; --danger: #e74c3c; --light: #ecf0f1; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        
+        /* Dashboard */
+        .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .card { background: var(--primary); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+        .card h3 { margin: 0; font-size: 18px; opacity: 0.8; }
+        .card p { font-size: 24px; font-weight: bold; margin: 10px 0 0 0; }
+
+        /* Form Styles */
+        .form-section { display: flex; gap: 10px; margin-bottom: 30px; flex-wrap: wrap; background: var(--light); padding: 15px; border-radius: 10px; }
+        input, select { padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-add { background: var(--success); color: white; }
+        .btn-print { background: var(--secondary); color: white; }
+
+        /* Table Styles */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        th { background: var(--primary); color: white; }
+        .amount-due { color: var(--danger); font-weight: bold; }
+
+        /* Modal for Ledger */
+        #ledgerModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 20px; border-radius: 10px; width: 80%; max-width: 600px; max-height: 80vh; overflow-y: auto; }
+
+        @media print {
+            body * { visibility: hidden; }
+            #printSection, #printSection * { visibility: visible; }
+            #printSection { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1 style="text-align: center; color: var(--primary);">📒 ডিজিটাল হিসাব খাতা</h1>
+
+        <!-- Dashboard -->
+        <div class="dashboard">
+            <div class="card">
+                <h3>মোট গ্রাহক</h3>
+                <p id="totalCustomers">0 জন</p>
+            </div>
+            <div class="card" style="background: var(--danger);">
+                <h3>মোট বকেয়া টাকা</h3>
+                <p id="totalDue">০ টাকা</p>
+            </div>
+        </div>
+
+        <!-- Add Customer -->
+        <div class="form-section">
+            <input type="text" id="custName" placeholder="গ্রাহকের নাম">
+            <input type="text" id="custPhone" placeholder="মোবাইল নাম্বার">
+            <button class="btn btn-add" onclick="addCustomer()">গ্রাহক যোগ করুন</button>
+        </div>
+
+        <!-- Add Entry -->
+        <div class="form-section">
+            <select id="custSelect"><option value="">গ্রাহক নির্বাচন করুন</option></select>
+            <input type="number" id="amount" placeholder="টাকার পরিমাণ">
+            <select id="type">
+                <option value="due">বাকিতে মাল (Due)</option>
+                <option value="paid">টাকা জমা (Paid)</option>
+            </select>
+            <button class="btn btn-add" onclick="addEntry()">এন্ট্রি করুন</button>
+        </div>
+
+        <!-- Customer List Table -->
+        <table>
+            <thead>
+                <tr>
+                    <th>নাম</th>
+                    <th>নাম্বার</th>
+                    <th>মোট বকেয়া</th>
+                    <th>অ্যাকশন</th>
+                </tr>
+            </thead>
+            <tbody id="customerTable"></tbody>
+        </table>
+    </div>
+
+    <!-- Ledger Modal -->
+    <div id="ledgerModal">
+        <div class="modal-content" id="printSection">
+            <h2 id="ledgerTitle">গ্রাহকের হিসাব</h2>
+            <p id="ledgerPhone"></p>
+            <table id="ledgerTable">
+                <thead>
+                    <tr>
+                        <th>তারিখ</th>
+                        <th>ধরন</th>
+                        <th>পরিমাণ</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <h3 id="finalBalance" style="text-align: right;"></h3>
+            <button class="btn btn-print no-print" onclick="window.print()">প্রিন্ট করুন</button>
+            <button class="btn no-print" onclick="closeModal()">বন্ধ করুন</button>
+        </div>
+    </div>
+
+    <script>
+        let customers = JSON.parse(localStorage.getItem('customers')) || [];
+
+        function save() {
+            localStorage.setItem('customers', JSON.stringify(customers));
+            updateUI();
+        }
+
+        function addCustomer() {
+            const name = document.getElementById('custName').value;
+            const phone = document.getElementById('custPhone').value;
+            if(!name || !phone) return alert("সব তথ্য দিন!");
+
+            customers.push({ name, phone, entries: [], totalDue: 0 });
+            document.getElementById('custName').value = '';
+            document.getElementById('custPhone').value = '';
+            save();
+        }
+
+        function addEntry() {
+            const index = document.getElementById('custSelect').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+            const type = document.getElementById('type').value;
+
+            if(index === "" || isNaN(amount)) return alert("সঠিক গ্রাহক এবং টাকা লিখুন!");
+
+            const date = new Date().toLocaleDateString();
+            customers[index].entries.push({ date, amount, type });
+
+            if(type === 'due') customers[index].totalDue += amount;
+            else customers[index].totalDue -= amount;
+
+            document.getElementById('amount').value = '';
+            save();
+        }
+
+        function updateUI() {
+            const tableBody = document.getElementById('customerTable');
+            const select = document.getElementById('custSelect');
+            let totalAllDue = 0;
+
+            tableBody.innerHTML = '';
+            select.innerHTML = '<option value="">গ্রাহক নির্বাচন করুন</option>';
+
+            customers.forEach((c, i) => {
+                totalAllDue += c.totalDue;
+                tableBody.innerHTML += `
+                    <tr>
+                        <td>${c.name}</td>
+                        <td>${c.phone}</td>
+                        <td class="amount-due">${c.totalDue} টাকা</td>
+                        <td><button class="btn btn-print" onclick="showLedger(${i})">হিসাব দেখুন</button></td>
+                    </tr>`;
+                select.innerHTML += `<option value="${i}">${c.name}</option>`;
+            });
+
+            document.getElementById('totalCustomers').innerText = customers.length + " জন";
+            document.getElementById('totalDue').innerText = totalAllDue + " টাকা";
+        }
+
+        function showLedger(i) {
+            const c = customers[i];
+            document.getElementById('ledgerTitle').innerText = c.name + "-এর হিসাব খাতা";
+            document.getElementById('ledgerPhone').innerText = "মোবাইল: " + c.phone;
+            
+            const ledgerBody = document.querySelector('#ledgerTable tbody');
+            ledgerBody.innerHTML = '';
+            
+            c.entries.forEach(e => {
+                ledgerBody.innerHTML += `<tr><td>${e.date}</td><td>${e.type === 'due' ? 'বাকিতে' : 'জমা'}</td><td>${e.amount} টাকা</td></tr>`;
+            });
+
+            document.getElementById('finalBalance').innerText = "মোট বকেয়া: " + c.totalDue + " টাকা";
+            document.getElementById('ledgerModal').style.display = 'flex';
+        }
+
+        function closeModal() { document.getElementById('ledgerModal').style.display = 'none'; }
+
+        updateUI();
+    </script>
+</body>
+</html>
